@@ -42,7 +42,7 @@ LLAMA_API_KEY = os.environ.get("LLAMA_API_KEY")
 MISTRAL_API_KEY = os.environ.get("MISTRAL_API_KEY")
 XAI_API_KEY = os.environ.get("XAI_API_KEY")
 
-# Initialize API clients
+# Initialise API clients
 openai_client = OpenAI(api_key=OPENAI_API_KEY)
 anthropic_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 genai.configure(api_key=GOOGLE_API_KEY)
@@ -62,12 +62,12 @@ PRICING = {
     "Grok 2": {"input": 2.00, "output": 10.00}
 }
 
-# Tokenizer for OpenAI models
-openai_tokenizer = tiktoken.encoding_for_model("gpt-4")
+# Tokeniser for OpenAI models
+openai_tokeniser = tiktoken.encoding_for_model("gpt-4")
 
 # Function to count tokens for OpenAI models
 def count_tokens(text):
-    return len(openai_tokenizer.encode(text))
+    return len(openai_tokeniser.encode(text))
 
 # Function to calculate cost based on input and output tokens
 def calculate_cost(model_name, input_tokens, output_tokens):
@@ -100,13 +100,13 @@ async def analyze_sentiment_with_time_cost(text, model_name, max_tokens=10, temp
                 messages=[{"role": "user", "content": prompt}]
             )
             output = response.content[0].text.strip().lower()
-            output_tokens = len(openai_tokenizer.encode(response.content[0].text))
+            output_tokens = len(openai_tokeniser.encode(response.content[0].text))
 
         elif model_name == "Gemini 2.0 Flash":
             model = genai.GenerativeModel("gemini-2.0-flash")
             response = model.generate_content(prompt, generation_config={"max_output_tokens": max_tokens, "temperature": temperature})
             output = response.text.strip().lower()
-            output_tokens = len(openai_tokenizer.encode(output))
+            output_tokens = len(openai_tokeniser.encode(output))
 
         elif model_name == "DeepSeek V3":
             response = deepseek_client.chat.completions.create(
@@ -122,7 +122,7 @@ async def analyze_sentiment_with_time_cost(text, model_name, max_tokens=10, temp
             api_request_json = {"model": "llama3.3-70b", "messages": [{"role": "user", "content": prompt}], "stream": False}
             response = llama.run(api_request_json)
             output = response.json()["choices"][0]["message"]["content"].strip().lower()
-            output_tokens = len(openai_tokenizer.encode(output))
+            output_tokens = len(openai_tokeniser.encode(output))
 
         elif model_name == "Mistral Large":
             chat_response = mistral_client.chat.complete(
@@ -130,7 +130,7 @@ async def analyze_sentiment_with_time_cost(text, model_name, max_tokens=10, temp
                 messages=[{"role": "user", "content": prompt}]
             )
             output = chat_response.choices[0].message.content.strip().lower()
-            output_tokens = len(openai_tokenizer.encode(output))
+            output_tokens = len(openai_tokeniser.encode(output))
 
         elif model_name == "Grok 2":
             response = grok_client.chat.completions.create(
@@ -178,13 +178,13 @@ async def generate_summary_with_time_cost(text, model_name, max_tokens=50, tempe
                 temperature=temperature
             )
             output = response.content[0].text.strip().lower()
-            output_tokens = len(openai_tokenizer.encode(response.content[0].text))
+            output_tokens = len(openai_tokeniser.encode(response.content[0].text))
 
         elif model_name == "Gemini 2.0 Flash":
             model = genai.GenerativeModel("gemini-2.0-flash")
             response = model.generate_content(prompt, generation_config={"max_output_tokens": max_tokens, "temperature": temperature})
             output = response.text.strip().lower()
-            output_tokens = len(openai_tokenizer.encode(output))
+            output_tokens = len(openai_tokeniser.encode(output))
 
         elif model_name == "DeepSeek V3":
             response = deepseek_client.chat.completions.create(
@@ -200,7 +200,7 @@ async def generate_summary_with_time_cost(text, model_name, max_tokens=50, tempe
             api_request_json = {"model": "llama3.3-70b", "messages": [{"role": "user", "content": prompt}], "max_tokens": max_tokens, "temperature": temperature, "stream": False}
             response = llama.run(api_request_json)
             output = response.json()["choices"][0]["message"]["content"].strip().lower()
-            output_tokens = len(openai_tokenizer.encode(output))
+            output_tokens = len(openai_tokeniser.encode(output))
 
         elif model_name == "Mistral Large":
             chat_response = mistral_client.chat.complete(
@@ -210,7 +210,7 @@ async def generate_summary_with_time_cost(text, model_name, max_tokens=50, tempe
                 temperature=temperature
             )
             output = chat_response.choices[0].message.content.strip().lower()
-            output_tokens = len(openai_tokenizer.encode(output))
+            output_tokens = len(openai_tokeniser.encode(output))
 
         elif model_name == "Grok 2":
             response = grok_client.chat.completions.create(
@@ -258,13 +258,13 @@ async def generate_response_with_time_cost(review, user_name, model_name, temper
                 temperature=temperature
             )
             output = response.content[0].text.strip()
-            output_tokens = len(openai_tokenizer.encode(response.content[0].text))
+            output_tokens = len(openai_tokeniser.encode(response.content[0].text))
 
         elif model_name == "Gemini 2.0 Flash":
             model = genai.GenerativeModel("gemini-2.0-flash")
             response = model.generate_content(prompt, generation_config={"max_output_tokens": max_tokens, "temperature": temperature})
             output = response.text.strip().lower()
-            output_tokens = len(openai_tokenizer.encode(output))
+            output_tokens = len(openai_tokeniser.encode(output))
 
         elif model_name == "DeepSeek V3":
             response = deepseek_client.chat.completions.create(
@@ -280,7 +280,7 @@ async def generate_response_with_time_cost(review, user_name, model_name, temper
             api_request_json = {"model": "llama3.3-70b", "messages": [{"role": "user", "content": prompt}], "temperature": temperature, "max_tokens": max_tokens, "stream": False}
             response = llama.run(api_request_json)
             output = response.json()["choices"][0]["message"]["content"].strip()
-            output_tokens = len(openai_tokenizer.encode(output))
+            output_tokens = len(openai_tokeniser.encode(output))
 
         elif model_name == "Mistral Large":
             chat_response = mistral_client.chat.complete(
@@ -290,7 +290,7 @@ async def generate_response_with_time_cost(review, user_name, model_name, temper
                 temperature=temperature
             )
             output = chat_response.choices[0].message.content.strip()
-            output_tokens = len(openai_tokenizer.encode(output))
+            output_tokens = len(openai_tokeniser.encode(output))
 
         elif model_name == "Grok 2":
             response = grok_client.chat.completions.create(
@@ -347,7 +347,7 @@ async def calculate_total_time_and_cost(final_sample, unreplied_reviews):
             table2_data[model_name]["total_time_sentiment"] += response_time
             table2_data[model_name]["total_cost_sentiment"] += response_cost
 
-    # Summarization
+    # Summarisation
     for model_name, func in models.items():
         for text in final_sample["review"]:
             summary, response_time, response_cost = await generate_summary_with_time_cost(text, model_name)
