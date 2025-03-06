@@ -32,7 +32,7 @@ from bert_score import score
 
 # For response time and cost analytics
 from nltk.translate.meteor_score import meteor_score
-from transformers import GPT2LMHeadModel, GPT2Tokenizer
+from transformers import GPT2LMHeadModel, GPT2Tokeniser
 import torch
 import tiktoken
 
@@ -205,7 +205,7 @@ results_df["Review"] = results_df["Review"].apply(lambda x: fill(x, width=80))
 results_df["Summary"] = results_df["Summary"].apply(lambda x: fill(x, width=80))
 
 # Print the results in a clear table format
-print("\nReview Summarization Results:")
+print("\nReview Summarisation Results:")
 print(tabulate(
     results_df[["Review", "LLM", "Summary"]],
     headers="keys",
@@ -291,7 +291,7 @@ results_df["Review"] = results_df["Review"].apply(lambda x: fill(x, width=80))
 results_df["Generated Summary"] = results_df["Generated Summary"].apply(lambda x: fill(x, width=80))
 
 # Print the results in a clear table format
-print("\nPerformance Comparison of LLMs for Summarization:")
+print("\nPerformance Comparison of LLMs for Summarisation:")
 print(tabulate(
     # results_df[["LLM", "Review", "Generated Summary", "ROUGE-1 F1", "ROUGE-2 F1", "ROUGE-L F1", "BERTScore", "Compression Ratio", "Coherence (Human)", "Relevance (Human)"]],
         results_df[["LLM", "Review", "Generated Summary", "ROUGE-1 F1", "ROUGE-2 F1", "ROUGE-L F1", "BERTScore", "Compression Ratio"]],
@@ -317,12 +317,12 @@ for model_name in models.keys():
         "Compression Ratio": model_results["Compression Ratio"].mean()
     }
 
-# Convert the overall scores to a DataFrame for better visualization
+# Convert the overall scores to a DataFrame for better visualisation
 overall_scores_df = pd.DataFrame(overall_scores).T.reset_index()
 overall_scores_df.rename(columns={"index": "LLM"}, inplace=True)
 
 # Print the overall scores in a clear table format
-print("\nOverall Performance Comparison of LLMs for Summarization:")
+print("\nOverall Performance Comparison of LLMs for Summarisation:")
 print(tabulate(
     overall_scores_df,
     headers="keys",
@@ -339,12 +339,12 @@ print(tabulate(
 # GPT-2 for perplexity calculation is a common practice in NLP
 # It’s lightweight, free, and provides consistent results. 
 # If you need higher accuracy or are working on a high-stakes project, you can consider using GPT-4 or GPT-4o, keeping in mind the additional costs and complexity
-gpt2_tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
+gpt2_tokeniser = GPT2Tokeniser.from_pretrained("gpt2")
 gpt2_model = GPT2LMHeadModel.from_pretrained("gpt2")
 
 # Function to calculate perplexity
 def calculate_perplexity(text):
-    inputs = gpt2_tokenizer(text, return_tensors="pt", max_length=512, truncation=True)
+    inputs = gpt2_tokeniser(text, return_tensors="pt", max_length=512, truncation=True)
     with torch.no_grad():
         outputs = gpt2_model(**inputs, labels=inputs["input_ids"])
     loss = outputs.loss
@@ -375,8 +375,8 @@ PRICING = {
 # Models to evaluate
 MODELS = list(PRICING.keys())
 
-# Tokenizer for OpenAI models
-openai_tokenizer = tiktoken.encoding_for_model("gpt-4")
+# Tokeniser for OpenAI models
+openai_tokeniser = tiktoken.encoding_for_model("gpt-4")
 
 # Function to calculate cost based on input and output tokens
 def calculate_cost(model_name, input_tokens, output_tokens):
@@ -387,7 +387,7 @@ def calculate_cost(model_name, input_tokens, output_tokens):
 
 # Function to count tokens for OpenAI models
 def count_tokens(text):
-    return len(openai_tokenizer.encode(text))
+    return len(openai_tokeniser.encode(text))
 
 # Function to call the model and measure time and cost
 def call_model(text, model_name, task, max_tokens=50, temperature=0):
@@ -524,7 +524,7 @@ results_df["Review"] = results_df["Review"].apply(lambda x: fill(x, width=80))
 results_df["Generated Summary"] = results_df["Generated Summary"].apply(lambda x: fill(x, width=80))
 
 # Print the results in a clear table format
-print("\nPerformance Comparison of LLMs for Summarization:")
+print("\nPerformance Comparison of LLMs for Summarisation:")
 print(tabulate(
     # results_df[["LLM", "Review", "Generated Summary", "ROUGE-1 F1", "ROUGE-2 F1", "ROUGE-L F1", "BERTScore", "METEOR", "Perplexity", "Compression Ratio", "Response Time (s)", "Response Cost (USD)", "Coherence (Human)", "Relevance (Human)"]],
     results_df[["LLM", "Review", "Generated Summary", "ROUGE-1 F1", "ROUGE-2 F1", "ROUGE-L F1", "BERTScore", "METEOR", "Perplexity", "Compression Ratio", "Response Time (s)", "Response Cost (USD)"]],
@@ -554,12 +554,12 @@ for model_name in models.keys():
         "Total Response Cost (USD)": model_results["Response Cost (USD)"].sum()  # Summing cost
     }
 
-# Convert the overall scores to a DataFrame for better visualization
+# Convert the overall scores to a DataFrame for better visualisation
 overall_scores_df = pd.DataFrame(overall_scores).T.reset_index()
 overall_scores_df.rename(columns={"index": "LLM"}, inplace=True)
 
 # Print the overall scores in a clear table format
-print("\nOverall Performance Comparison of LLMs for Summarization:")
+print("\nOverall Performance Comparison of LLMs for Summarisation:")
 print(tabulate(
     overall_scores_df,
     headers="keys",
