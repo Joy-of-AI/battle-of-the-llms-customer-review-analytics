@@ -57,9 +57,8 @@ This project is designed for developers, data scientists, and businesses looking
 | File Name                                      | Description                                                                 |
 |------------------------------------------------|-----------------------------------------------------------------------------|
 | `1_extract_amazon_reviews.py`                  | Extract customer reviews for Amazon Shopping Apps from Google Play and App Store for analysis.                         |
-| `2_sentiment_analysis_llms.py`                | performs sentiment analysis using various Large Language Models (LLMs) 
-and compares their performance across different datasets.        |
+| `2_sentiment_analysis_llms.py`                | performs sentiment analysis using various Large Language Models (LLMs) and compares their performance across different datasets.        |
 | `3_summarise_customer_reviews_llms.py`        | summarises customer reviews using 7 leading LLMs to generate concise insights from large volumes of feedback.        |
 | `4_generate_review_responses_llms.py`         | generate responses for customer reviews that have not yet been addressed using 7 leading LLMs. |
 | `5_sentiment_summary_response_e2e_llms.py`    | End-to-end pipeline for sentiment analysis, summarization, response generation, and comparison of total response time and cost for each LLM. |
-| `5_sentiment_summary_response_e2e_llms_with_rate_limiter.py` | (Out of scope of this work) Enhanced version of 5_sentiment_summary_response_e2e_llms.py with rate limiting for Mistral Large to handle API throttling. |
+| `5_sentiment_summary_response_e2e_llms_with_rate_limiter.py` | (Out of scope) Enhanced version of 5_sentiment_summary_response_e2e_llms.py with rate limiting for Mistral Large to handle API throttling issues. |
