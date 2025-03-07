@@ -4,29 +4,38 @@ A comprehensive comparison of leading Large Language Models (LLMs) for customer 
 
 ## Key Features
 
-- **Multi-API Integration**: Seamlessly integrates multiple LLMs (OpenAI, Anthropic, Google, Mistral, DeepSeek, LLaMA, Grok) for diverse AI capabilities.  
-- **Secure API Key Management**: Uses environment variables for secure and configurable API key handling.  
-- **Sentiment Analysis**: Classifies reviews as positive, negative, or neutral.
-- **Summarisation**: Generates concise summaries of customer reviews.
-- **Response Generation**: Automates empathetic and professional customer support responses.
-- **Multi-LLM Support**: Compare results across multiple state-of-the-art LLMs.
-- **Time and Cost Tracking**: Measures execution time and calculates costs for each task.
-- **Dynamic Token Counting**: Implements token counting (tiktoken) and cost calculation for efficient API usage.
-- **Asynchronous Execution**: Improves efficiency with concurrent API calls.
-- **Customisable Prompts**: Tailor prompts for sentiment analysis, summarisation, and response generation.
+### **Core Functionality**
+- **Sentiment Analysis**: Classifies reviews as positive, negative, or neutral.  
+- **Summarisation**: Generates concise summaries of customer reviews.  
+- **Generating User-Centric Responses**: Incorporates user names and empathetic language for enhanced customer support.  
 
-- ### Key Features
+### **Multi-LLM Integration**
+- **Multi-API Integration**: Seamlessly integrates multiple LLMs (OpenAI, Anthropic, Google, Mistral, DeepSeek, Meta, XAI).  
+- **Multi-LLM Support**: Fair comparison across multiple state-of-the-art LLMs.  
 
-- **Sentiment Validation**: Validates outputs to ensure only valid sentiments (positive, negative, neutral) are returned.  
-- **Task-Specific Prompts**: Uses tailored prompts for sentiment analysis, summarization, and response generation.  
-- **Cost & Time Tracking**: Tracks time and cost for each task, enabling detailed performance comparisons.  
+### **Efficiency & Performance**
+- **Asynchronous Execution**: Improves efficiency with concurrent API calls using asyncio.  
+- **Time and Cost Tracking**: Measures execution time and calculates costs for each task.  
+- **Dynamic Token Counting**: Implements token counting (tiktoken) for efficient API usage.  
+
+### **Error Handling & Reliability**
 - **Robust Error Handling**: Implements exception handling for graceful degradation and fallback mechanisms.  
-- **Text Formatting**: Ensures clean, readable output with text wrapping for long responses.  
-- **End-to-End Workflow**: Orchestrates a complete pipeline from sentiment analysis to response generation.  
+- **Sentiment Validation**: Ensures outputs are valid (positive, negative, or neutral).  
+
+### **Security & Configuration**
+- **Secure API Key Management**: Uses environment variables for secure and configurable API key handling.  
+
+### **Customisation & Scalability**
+- **Customisable Prompts**: Tailor prompts for sentiment analysis, summarisation, and response generation.  
 - **Scalable Design**: Modular structure allows easy addition of new models or tasks.  
-- **Debugging & Logging**: Uses logging for troubleshooting and performance monitoring.  
+
+### **Output & Reporting**
+- **Text Formatting**: Ensures clean, readable output with text wrapping for long responses.  
 - **Comparative Analysis**: Generates tables for model performance, cost, and time efficiency insights.  
-- **User-Centric Responses**: Incorporates user names and empathetic language for enhanced customer support.  
+
+### **End-to-End Workflow**
+- **End-to-End Pipeline**: Orchestrates a complete workflow from sentiment analysis to response generation.  
+
 
 ## Use Cases
 
