@@ -51,3 +51,15 @@ This project is designed for developers, data scientists, and businesses looking
 3. Set up API keys in a `.env` file.
 4. Run the script to analyse customer reviews and generate insights.
 5. I used Visual Studio Code for this project, but you can use any IDE that supports Python.
+
+## Code Files Explanation
+### Table of Scripts
+
+| File Name                                      | Description                                                                 |
+|------------------------------------------------|-----------------------------------------------------------------------------|
+| `1_extract_amazon_reviews.py`                  | Extracts customer reviews from Amazon for analysis.                         |
+| `2_sentiment_analysis_llms.py`                | Performs sentiment analysis on customer reviews using multiple LLMs.        |
+| `3_summarise_customer_reviews_llms.py`        | Generates concise summaries of customer reviews using multiple LLMs.        |
+| `4_generate_review_responses_llms.py`         | Generates empathetic and informative responses to customer reviews using LLMs. |
+| `5_sentiment_summary_response_e2e_llms.py`    | End-to-end pipeline for sentiment analysis, summarization, and response generation using LLMs. |
+| `5_sentiment_summary_response_e2e_llms_with_rate_limiter.py` | Enhanced version of the end-to-end pipeline with rate limiting for Mistral Large to handle API throttling. |
