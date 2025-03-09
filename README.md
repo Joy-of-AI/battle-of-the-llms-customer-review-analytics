@@ -81,7 +81,7 @@ This project is designed for developers, data scientists, and businesses looking
 2. Install dependencies using `pip install -r requirements.txt` or `!python -m pip install -r requirements.txt`.
 3. Set up API keys in a `.env` file.
 4. Run the script to analyse customer reviews and generate insights.
-5. I used Visual Studio Code for this project, but you can use any IDE that supports Python.
+5. I used Visual Studio Code with Python 3.13.2 64-bit for this project, but you can use any IDE that supports Python.
 
 
 ## Table of Scripts
