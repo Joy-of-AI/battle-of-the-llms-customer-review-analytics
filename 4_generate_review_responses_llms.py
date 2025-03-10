@@ -16,28 +16,26 @@ Last Updated: 2025-03-08
 import os
 import time
 import pandas as pd
-from mistralai import Mistral
 from dotenv import load_dotenv
+from tabulate import tabulate
+import tiktoken
+from mistralai import Mistral
 import anthropic
-import json
 from llamaapi import LlamaAPI
 from openai import OpenAI
 import google.generativeai as genai
+import asyncio
+import textwrap
+from aiolimiter import AsyncLimiter
 from rouge import Rouge
-from bert_score import score
-from transformers import GPT2LMHeadModel, GPT2Tokenizer, GPT2LMHeadModel
-from textblob import TextBlob
-from tabulate import tabulate
-import torch  # Import torch for perplexity calculation
-from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
+from bert_score import score as bert_score
 from nltk.translate.meteor_score import meteor_score
-from sklearn.metrics.pairwise import cosine_similarity
+from transformers import GPT2LMHeadModel, GPT2Tokenizer
+import torch
 from sentence_transformers import SentenceTransformer
-import tiktoken  # For accurate token counting
-
-# -----------------------------------------------------------------------
-# Section 0- Configurations and setups
-# -----------------------------------------------------------------------
+from sklearn.metrics.pairwise import cosine_similarity
+from textblob import TextBlob
+from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
 
 # Load environment variables
 load_dotenv()
@@ -60,299 +58,19 @@ deepseek_client = OpenAI(api_key=DEEPSEEK_API_KEY, base_url="https://api.deepsee
 llama = LlamaAPI(LLAMA_API_KEY)
 grok_client = OpenAI(api_key=XAI_API_KEY, base_url="https://api.x.ai/v1")
 
-# -----------------------------------------------------------------------
-# Section 1- Generate Responses- Reviews that haven't been responded yet
-# -----------------------------------------------------------------------
+# Global rate limiter for Mistral Large (1 request every 2 seconds)
+mistral_rate_limiter = AsyncLimiter(max_rate=1, time_period=2)
 
-# Function to generate a response to a customer review
-def generate_response(review, user_name, model_name, temperature=0, max_tokens=150):
-    try:
-        prompt = f"You are a customer support agent. Write a short, empathetic, and informative response to the following customer review. The review mentions specific issues that the customer is experiencing. Address the customer's concerns in a clear, friendly, and professional manner, and provide suggestions or solutions where necessary. Address the customer by their name ({user_name}):\n\n{review}"
-        
-        if model_name == "OpenAI GPT-4o":
-            response = openai_client.chat.completions.create(
-                model="gpt-4o",
-                messages=[{"role": "system", "content": prompt}],
-                max_tokens=max_tokens,  # Added max_tokens here
-                temperature=temperature
-            )
-            return response.choices[0].message.content.strip()
-        
-        elif model_name == "Claude 3.7 Sonnet":
-            response = anthropic_client.messages.create(
-                model="claude-3-7-sonnet-latest",
-                max_tokens=max_tokens,  # Added max_tokens here
-                messages=[{"role": "user", "content": prompt}],
-                temperature=temperature
-            )
-            return response.content[0].text.strip()
-        
-        elif model_name == "Gemini 2.0 Flash":
-            model = genai.GenerativeModel("gemini-2.0-flash")
-            response = model.generate_content(prompt, max_tokens=max_tokens, temperature=temperature)  # Added max_tokens here
-            return response.text.strip()
-        
-        elif model_name == "DeepSeek V3":
-            response = deepseek_client.chat.completions.create(
-                model="deepseek-chat",
-                messages=[
-                    {"role": "system", "content": prompt},
-                    {"role": "user", "content": review}
-                ],
-                max_tokens=max_tokens,  # Added max_tokens here
-                temperature=temperature
-            )
-            return response.choices[0].message.content.strip()
-        
-        elif model_name == "LLaMA 3.3 70B":
-            api_request_json = {
-                "model": "llama3.3-70b",
-                "messages": [{"role": "user", "content": prompt}],
-                "temperature": temperature,
-                "max_tokens": max_tokens,  # Added max_tokens here
-                "stream": False
-            }
-            response = llama.run(api_request_json)
-            response_json = response.json()
-            if "choices" in response_json and response_json["choices"]:
-                return response_json["choices"][0]["message"]["content"].strip()
-            return f"Error: Unexpected response format - {json.dumps(response_json, indent=2)}"
-        
-        elif model_name == "Mistral Large":
-            chat_response = mistral_client.chat.complete(
-                model="mistral-large-latest",
-                messages=[
-                    {"role": "system", "content": prompt},
-                    {"role": "user", "content": review}
-                ],
-                max_tokens=max_tokens,  # Added max_tokens here
-                temperature=temperature
-            )
-            return chat_response.choices[0].message.content.strip()
-        
-        elif model_name == "Grok 2":
-            response = grok_client.chat.completions.create(
-                model="grok-2-latest",
-                messages=[
-                    {"role": "system", "content": prompt},
-                    {"role": "user", "content": review}
-                ],
-                max_tokens=max_tokens,  # Added max_tokens here
-                temperature=temperature
-            )
-            return response.choices[0].message.content.strip()
-        
-        else:
-            return "Unsupported model"
-    except Exception as e:
-        return str(e)
-
-# Focus on reviews that haven't been responded yet
-unreplied_reviews = final_sample[final_sample["is_replied"] == "No"]
-
-# Store results
-results = []
-
-# Iterate through unreplied reviews and generate responses
-for index, row in unreplied_reviews.iterrows():
-    review = row["review"]
-    user_name = row["userName"]
-    for model_name in models.keys():
-        generated_response = generate_response(review, user_name, model_name)
-        results.append({
-            "Review": review,
-            "LLM": model_name,
-            "Generated Response": generated_response
-        })
-
-# Convert results to a DataFrame
-results_df = pd.DataFrame(results)
-
-# Print the results in a clear table format
-print("\nGenerated Responses for Unreplied Reviews:")
-print(tabulate(
-    results_df,
-    headers="keys",
-    tablefmt="grid",
-    showindex=False
-))
-
-# -----------------------------------------------------------------------
-# Section 2- Performance Analysis
-# -----------------------------------------------------------------------
-
-# Load GPT-2 model for perplexity calculation
-gpt2_tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
-gpt2_model = GPT2LMHeadModel.from_pretrained("gpt2")
-
-# Function to calculate perplexity
-def calculate_perplexity(text):
-    inputs = gpt2_tokenizer (text, return_tensors="pt", max_length=512, truncation=True)
-    outputs = gpt2_model (**inputs, labels=inputs["input_ids"])
-    loss = outputs.loss
-    return float(torch.exp(loss))  # Use torch.exp to calculate perplexity
-
-# Reinitialize the model
-similarity_model = SentenceTransformer('all-MiniLM-L6-v2')
-
-# Load similarity model for dynamic reference selection
-similarity_model = SentenceTransformer('all-MiniLM-L6-v2')
-
-# Function to calculate sentiment alignment
-def calculate_sentiment_alignment(review_sentiment, response_sentiment):
-    return 1 if review_sentiment == response_sentiment else 0
-
-# Function to compute ROUGE scores
-def compute_rouge(reference, generated):
-    rouge = Rouge()
-    scores = rouge.get_scores(generated, reference)
-    return {
-        "rouge-1": scores[0]["rouge-1"]["f"],
-        "rouge-2": scores[0]["rouge-2"]["f"],
-        "rouge-l": scores[0]["rouge-l"]["f"]
-    }
-
-# Function to compute BERTScore
-def compute_bertscore(reference, generated):
-    P, R, F1 = score([generated], [reference], lang="en")
-    return F1.mean().item()
-
-# Function to compute sentiment
-def compute_sentiment(text):
-    return TextBlob(text).sentiment.polarity
-
-# Function to compute BLEU Score
-def compute_bleu(reference, generated):
-    reference_tokens = reference.split()
-    generated_tokens = generated.split()
-    return sentence_bleu([reference_tokens], generated_tokens, smoothing_function=SmoothingFunction().method1)
-
-# Function to compute METEOR score
-def compute_meteor(reference, generated):
-    return meteor_score([reference.split()], generated.split())
-
-# Function to select the best reference response
-def select_best_reference(generated_response, reference_responses):
-    generated_embedding = similarity_model.encode([generated_response])
-    reference_embeddings = similarity_model.encode(reference_responses)
-    similarities = cosine_similarity(generated_embedding, reference_embeddings)
-    best_index = similarities.argmax()
-    return reference_responses[best_index]
-
-# Define models as a dictionary
-models = {
-    "OpenAI GPT-4o": "gpt-4o",
-    "Claude 3.7 Sonnet": "claude-3-7-sonnet-latest",
-    "Gemini 2.0 Flash": "gemini-2.0-flash",
-    "DeepSeek V3": "deepseek-chat",
-    "LLaMA 3.3 70B": "llama3.3-70b",
-    "Mistral Large": "mistral-large-latest",
-    "Grok 2": "grok-2-latest"
+# Pricing per 1M tokens (USD)
+PRICING = {
+    "OpenAI GPT-4o": {"input": 2.50, "output": 10.00},
+    "Claude 3.7 Sonnet": {"input": 3.00, "output": 15.00},
+    "Gemini 2.0 Flash": {"input": 0.10, "output": 0.40},
+    "DeepSeek V3": {"input": 0.27, "output": 1.10},
+    "LLaMA 3.3 70B": {"input": 2.80, "output": 2.80},
+    "Mistral Large": {"input": 2.00, "output": 6.00},
+    "Grok 2": {"input": 2.00, "output": 10.00}
 }
-
-# Optimised prompt for better guidance
-def generate_response(review, user_name, model_name, temperature=0, max_tokens=150, top_p=0.9):
-    try:
-        prompt = (
-            f"You are a customer support agent. Write a short, empathetic, and informative response to the following customer review. "
-            f"The review mentions specific issues that the customer is experiencing. Address the customer's concerns in a clear, friendly, and professional manner, "
-            f"and provide suggestions or solutions where necessary. Address the customer by their name ({user_name}):\n\n"
-            f"Review: {review}\n\n"
-            f"Response:"
-        )
-        
-        if model_name == "OpenAI GPT-4o":
-            response = openai_client.chat.completions.create(
-                model="gpt-4o",
-                messages=[{"role": "system", "content": prompt}],
-                max_tokens=max_tokens,
-                temperature=temperature,
-                top_p=top_p,
-                n=1,
-                stop=None,
-                frequency_penalty=0,
-                presence_penalty=0
-            )
-            return response.choices[0].message.content.strip()
-        
-        elif model_name == "Claude 3.7 Sonnet":
-            response = anthropic_client.messages.create(
-                model="claude-3-7-sonnet-latest",
-                max_tokens=max_tokens,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=temperature,
-                top_p=top_p
-            )
-            return response.content[0].text.strip()
-        
-        elif model_name == "Gemini 2.0 Flash":
-            model = genai.GenerativeModel("gemini-2.0-flash")
-            response = model.generate_content(prompt)
-            return response.text.strip()
-        
-        elif model_name == "DeepSeek V3":
-            response = deepseek_client.chat.completions.create(
-                model="deepseek-chat",
-                messages=[
-                    {"role": "system", "content": prompt},
-                    {"role": "user", "content": review}
-                ],
-                max_tokens=max_tokens,
-                temperature=temperature,
-                top_p=top_p
-            )
-            return response.choices[0].message.content.strip()
-        
-        elif model_name == "LLaMA 3.3 70B":
-            api_request_json = {
-                "model": "llama3.3-70b",
-                "messages": [{"role": "user", "content": prompt}],
-                "temperature": temperature,
-                "max_tokens": max_tokens,
-                "top_p": top_p,
-                "stream": False
-            }
-            response = llama.run(api_request_json)
-            response_json = response.json()
-            if "choices" in response_json and response_json["choices"]:
-                return response_json["choices"][0]["message"]["content"].strip()
-            return f"Error: Unexpected response format - {json.dumps(response_json, indent=2)}"
-        
-        elif model_name == "Mistral Large":
-            chat_response = mistral_client.chat.complete(
-                model="mistral-large-latest",
-                messages=[
-                    {"role": "system", "content": prompt},
-                    {"role": "user", "content": review}
-                ],
-                max_tokens=max_tokens,
-                temperature=temperature,
-                top_p=top_p
-            )
-            return chat_response.choices[0].message.content.strip()
-        
-        elif model_name == "Grok 2":
-            response = grok_client.chat.completions.create(
-                model="grok-2-latest",
-                messages=[
-                    {"role": "system", "content": prompt},
-                    {"role": "user", "content": review}
-                ],
-                max_tokens=max_tokens,
-                temperature=temperature,
-                top_p=top_p
-            )
-            return response.choices[0].message.content.strip()
-        
-        else:
-            return "Unsupported model"
-    except Exception as e:
-        return str(e)
-
-# Post-processing
-def post_process_response(response, user_name):
-    response = response.replace("Thank you for your feedback.", f"Dear {user_name}, thank you for your feedback.")
-    return response
 
 # Reference responses (multiple per user)
 reference_responses = {
@@ -408,83 +126,6 @@ reference_responses = {
     ]
 }
 
-# Main loop with improved parameters
-results = []
-
-for index, row in unreplied_reviews.iterrows():
-    review = row["review"]
-    user_name = row["userName"]
-    reference_responses_list = reference_responses.get(user_name, ["No reference available"])
-    review_sentiment = "positive" if compute_sentiment(review) > 0 else "negative" if compute_sentiment(review) < 0 else "neutral"
-    
-    for model_name in models.keys():  # Iterate over model names
-        generated_response = generate_response(review, user_name, model_name, temperature=0, max_tokens=150, top_p=0.9)
-        generated_response = post_process_response(generated_response, user_name)
-        
-        # Select the best reference response
-        best_reference = select_best_reference(generated_response, reference_responses_list)
-        
-        # Compute automated metrics
-        rouge_scores = compute_rouge(best_reference, generated_response)
-        bertscore = compute_bertscore(best_reference, generated_response)
-        bleu = compute_bleu(best_reference, generated_response)
-        meteor = compute_meteor(best_reference, generated_response)
-        perplexity = calculate_perplexity(generated_response)
-        response_sentiment = "positive" if compute_sentiment(generated_response) > 0 else "negative" if compute_sentiment(generated_response) < 0 else "neutral"
-        sentiment_alignment = calculate_sentiment_alignment(review_sentiment, response_sentiment)
-        
-        # Add results
-        results.append({
-            "Review": review,
-            "LLM": model_name,
-            "Generated Response": generated_response,
-            "ROUGE-1 F1": rouge_scores["rouge-1"],
-            "ROUGE-2 F1": rouge_scores["rouge-2"],
-            "ROUGE-L F1": rouge_scores["rouge-l"],
-            "ROUGE-L-SUM": rouge_scores["rouge-l"],  # Same as ROUGE-L for single reference
-            "BERTScore": bertscore,
-            "BLEU": bleu,
-            "METEOR": meteor,
-            "Perplexity": perplexity,
-            "Sentiment Alignment": sentiment_alignment,
-            "Relevance (Human)": None,
-            "Coherence (Human)": None,
-            "Helpfulness (Human)": None,
-            "Tone (Human)": None,
-            "Creativity (Human)": None
-        })
-
-# Create DataFrame
-results_df = pd.DataFrame(results)
-
-# Display the results as a table
-print("\nPerformance Comparison of LLMs for Response Generation:")
-print(tabulate(
-    results_df,
-    headers="keys",
-    tablefmt="grid",
-    showindex=False,
-    floatfmt=".4f"
-))
-
-# -----------------------------------------------------------------------
-# Section 3- Time and Cost Analytics
-# -----------------------------------------------------------------------
-
-# Pricing per 1M tokens (USD)- Prining regerences in Resources section of the article
-PRICING = {
-    "OpenAI GPT-4o": {"input": 2.50, "output": 10.00},  # Input: $2.50, Output: $10.00
-    "Claude 3.7 Sonnet": {"input": 3.00, "output": 15.00},  # Input: $3.00, Output: $15.00
-    "Gemini 2.0 Flash": {"input": 0.10, "output": 0.40},  # Input: $0.10, Output: $0.40
-    "DeepSeek V3": {"input": 0.27, "output": 1.10},  # Cache Miss: $0.27, Output: $1.10
-    "LLaMA 3.3 70B": {"input": 2.80, "output": 2.80},  # Input: $2.80, Output: $2.80
-    "Mistral Large": {"input": 2.00, "output": 6.00},  # Input: $2.00, Output: $6.00
-    "Grok 2": {"input": 2.00, "output": 10.00}  # Input: $2.00, Output: $10.00
-}
-
-# Models to evaluate
-MODELS = list(PRICING.keys())
-
 # Tokenizer for OpenAI models
 openai_tokenizer = tiktoken.encoding_for_model("gpt-4")
 
@@ -499,181 +140,269 @@ def calculate_cost(model_name, input_tokens, output_tokens):
     total_cost = (input_tokens * input_price) + (output_tokens * output_price)
     return round(total_cost, 6)
 
-# Function to call the model and measure time and cost
-def call_model(text, model_name, task, max_tokens=50, temperature=0):
-    start_time = time.time()
+# Function to compute ROUGE scores
+def compute_rouge(reference, generated):
+    rouge = Rouge()
+    scores = rouge.get_scores(generated, reference)
+    return {
+        "rouge-1": scores[0]["rouge-1"]["f"],
+        "rouge-2": scores[0]["rouge-2"]["f"],
+        "rouge-l": scores[0]["rouge-l"]["f"]
+    }
+
+# Function to compute BERTScore
+def compute_bertscore(reference, generated):
+    P, R, F1 = bert_score([generated], [reference], lang="en")
+    return F1.mean().item()
+
+# Function to compute METEOR score
+def compute_meteor(reference, generated):
+    return meteor_score([reference.split()], generated.split())
+
+# Function to compute Compression Ratio
+def compute_compression_ratio(original_text, summary):
+    return len(original_text.split()) / len(summary.split())
+
+# Load GPT-2 model for perplexity calculation
+gpt2_tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
+gpt2_model = GPT2LMHeadModel.from_pretrained("gpt2")
+
+# Function to calculate perplexity
+def calculate_perplexity(text):
+    inputs = gpt2_tokenizer(text, return_tensors="pt", max_length=512, truncation=True)
+    with torch.no_grad():
+        outputs = gpt2_model(**inputs, labels=inputs["input_ids"])
+    loss = outputs.loss
+    return float(torch.exp(loss))  # Perplexity = exp(loss)
+
+# Function to compute sentiment
+def compute_sentiment(text):
+    return TextBlob(text).sentiment.polarity
+
+# Function to compute BLEU Score
+def compute_bleu(reference, generated):
+    reference_tokens = reference.split()
+    generated_tokens = generated.split()
+    return sentence_bleu([reference_tokens], generated_tokens, smoothing_function=SmoothingFunction().method1)
+
+# Function to select the best reference response
+def select_best_reference(generated_response, reference_responses):
+    similarity_model = SentenceTransformer('all-MiniLM-L6-v2')
+    generated_embedding = similarity_model.encode([generated_response])
+    reference_embeddings = similarity_model.encode(reference_responses)
+    similarities = cosine_similarity(generated_embedding, reference_embeddings)
+    best_index = similarities.argmax()
+    return reference_responses[best_index]
+
+# Function to calculate sentiment alignment
+def calculate_sentiment_alignment(review_sentiment, response_sentiment):
+    return 1 if review_sentiment == response_sentiment else 0
+
+# Function to generate response with time and cost
+async def generate_response_with_time_cost(review, user_name, model_name, max_tokens=150, temperature=0):
     try:
-        prompt = SUMMARY_PROMPT + " " + text
-        input_tokens = count_tokens(prompt)  # Accurate token counting for OpenAI models
+        prompt = (
+            f"You are a customer support agent. Write a short, empathetic, and informative response to the following customer review. "
+            f"The review mentions specific issues that the customer is experiencing. Address the customer's concerns in a clear, friendly, and professional manner, "
+            f"and provide suggestions or solutions where necessary. Address the customer by their name ({user_name}):\n\n"
+            f"Review: {review}\n\n"
+            f"Response:"
+        )
+        input_tokens = count_tokens(prompt)
 
-        if model_name == "OpenAI GPT-4o":
-            response = openai_client.chat.completions.create(
-                model="gpt-4o",
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=max_tokens,
-                temperature=temperature
-            )
-            output = response.choices[0].message.content.strip().lower()
-            output_tokens = response.usage.completion_tokens
-
-        elif model_name == "Claude 3.7 Sonnet":
-            response = anthropic_client.messages.create(
-                model="claude-3-7-sonnet-latest",
-                max_tokens=max_tokens,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=temperature
-            )
-            output = response.content[0].text.strip().lower()
-            output_tokens = len(response.content[0].text.split())  # Approximate output tokens
-
-        elif model_name == "Gemini 2.0 Flash":
-            model = genai.GenerativeModel("gemini-2.0-flash")
-            response = model.generate_content(
-                prompt,
-                generation_config={"max_output_tokens": max_tokens, "temperature": temperature}
-            )
-            output = response.text.strip().lower()
-            output_tokens = len(output.split())  # Approximate output tokens
-
-        elif model_name == "DeepSeek V3":
-            response = deepseek_client.chat.completions.create(
-                model="deepseek-chat",
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=max_tokens,
-                temperature=temperature
-            )
-            output = response.choices[0].message.content.strip().lower()
-            output_tokens = response.usage.completion_tokens
-
-        elif model_name == "LLaMA 3.3 70B":
-            api_request_json = {
-                "model": "llama3.3-70b",
-                "messages": [{"role": "user", "content": prompt}],
-                "max_tokens": max_tokens,
-                "temperature": temperature,
-                "stream": False
-            }
-            response = llama.run(api_request_json)
-            output = response.json()["choices"][0]["message"]["content"].strip().lower()
-            output_tokens = len(output.split())  # Approximate output tokens
-
-        elif model_name == "Mistral Large":
-            chat_response = mistral_client.chat.complete(
-                model="mistral-large-latest",
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=max_tokens,
-                temperature=temperature
-            )
-            output = chat_response.choices[0].message.content.strip().lower()
-            output_tokens = len(output.split())  # Approximate output tokens
-
-        elif model_name == "Grok 2":
-            response = grok_client.chat.completions.create(
-                model="grok-2-latest",
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=max_tokens,
-                temperature=temperature
-            )
-            output = response.choices[0].message.content.strip().lower()
-            output_tokens = response.usage.completion_tokens
-        
+        if model_name == "Mistral Large":
+            # Apply rate limiter before starting the timer
+            async with mistral_rate_limiter:
+                api_start_time = time.time()  # Start timing after rate limiter
+                response = mistral_client.chat.complete(
+                    model="mistral-large-latest",
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=max_tokens,
+                    temperature=temperature
+                )
+                api_end_time = time.time()  # End timing for the API call
+                output = response.choices[0].message.content.strip()
+                output_tokens = len(openai_tokenizer.encode(output))
+                api_response_time = api_end_time - api_start_time  # Calculate API response time
         else:
-            return model_name, "Unsupported model", 0, 0
+            # Handle other models (no rate limiter)
+            api_start_time = time.time()  # Start timing for the API call
+            if model_name == "OpenAI GPT-4o":
+                response = openai_client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=max_tokens,
+                    temperature=temperature
+                )
+                output = response.choices[0].message.content.strip()
+                output_tokens = response.usage.completion_tokens
+            elif model_name == "Claude 3.7 Sonnet":
+                response = anthropic_client.messages.create(
+                    model="claude-3-7-sonnet-latest",
+                    max_tokens=max_tokens,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=temperature
+                )
+                output = response.content[0].text.strip()
+                output_tokens = len(openai_tokenizer.encode(response.content[0].text))
+            elif model_name == "Gemini 2.0 Flash":
+                model = genai.GenerativeModel("gemini-2.0-flash")
+                response = model.generate_content(prompt, generation_config={"max_output_tokens": max_tokens, "temperature": temperature})
+                output = response.text.strip()
+                output_tokens = len(openai_tokenizer.encode(output))
+            elif model_name == "DeepSeek V3":
+                response = deepseek_client.chat.completions.create(
+                    model="deepseek-chat",
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=max_tokens,
+                    temperature=temperature
+                )
+                output = response.choices[0].message.content.strip()
+                output_tokens = response.usage.completion_tokens
+            elif model_name == "LLaMA 3.3 70B":
+                api_request_json = {
+                    "model": "llama3.3-70b",
+                    "messages": [{"role": "user", "content": prompt}],
+                    "max_tokens": max_tokens,
+                    "temperature": temperature,
+                    "stream": False
+                }
+                response = llama.run(api_request_json)
+                output = response.json()["choices"][0]["message"]["content"].strip()
+                output_tokens = len(openai_tokenizer.encode(output))
+            elif model_name == "Grok 2":
+                response = grok_client.chat.completions.create(
+                    model="grok-2-latest",
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=max_tokens,
+                    temperature=temperature
+                )
+                output = response.choices[0].message.content.strip()
+                output_tokens = response.usage.completion_tokens
+            else:
+                return "Unsupported model", 0, 0
+
+            api_end_time = time.time()  # End timing for the API call
+            api_response_time = api_end_time - api_start_time  # Calculate API response time
 
     except Exception as e:
-        return model_name, str(e), 0, 0
+        return str(e), 0, 0
 
-    end_time = round(time.time() - start_time, 4)
     cost = calculate_cost(model_name, input_tokens, output_tokens)
 
-    return model_name, output, end_time, cost
+    # Use API response time for performance metrics (excludes rate limiter delay)
+    return output, api_response_time, cost
 
-# Main loop with time and cost calculation
-results = []
+# Function to wrap text in a specific column
+def wrap_text(df, column_name, width=50):
+    df[column_name] = df[column_name].apply(lambda x: "\n".join(textwrap.wrap(str(x), width)))
+    return df
 
-for index, row in unreplied_reviews.iterrows():
-    review = row["review"]
-    user_name = row["userName"]
-    reference_responses_list = reference_responses.get(user_name, ["No reference available"])
-    review_sentiment = "positive" if compute_sentiment(review) > 0 else "negative" if compute_sentiment(review) < 0 else "neutral"
-    
-    for model_name in models.keys():  # Iterate over model names
-        # Generate response and measure time/cost
-        model_result = call_model(review, model_name, "response")
-        generated_response = model_result[1]
-        response_time = model_result[2]
-        response_cost = model_result[3]
-        
-        # Post-process the response
-        generated_response = post_process_response(generated_response, user_name)
-        
-        # Select the best reference response
-        best_reference = select_best_reference(generated_response, reference_responses_list)
-        
-        # Compute automated metrics
-        rouge_scores = compute_rouge(best_reference, generated_response)
-        bertscore = compute_bertscore(best_reference, generated_response)
-        bleu = compute_bleu(best_reference, generated_response)
-        meteor = compute_meteor(best_reference, generated_response)
-        perplexity = calculate_perplexity(generated_response)
-        response_sentiment = "positive" if compute_sentiment(generated_response) > 0 else "negative" if compute_sentiment(generated_response) < 0 else "neutral"
-        sentiment_alignment = calculate_sentiment_alignment(review_sentiment, response_sentiment)
-        
-        # Add results
-        results.append({
-            "Review": review,
-            "LLM": model_name,
-            "Generated Response": generated_response,
-            "Response Time (s)": response_time,
-            "Response Cost (USD)": response_cost,
-            "ROUGE-1 F1": rouge_scores["rouge-1"],
-            "ROUGE-2 F1": rouge_scores["rouge-2"],
-            "ROUGE-L F1": rouge_scores["rouge-l"],
-            "ROUGE-L-SUM": rouge_scores["rouge-l"],  # Same as ROUGE-L for single reference
-            "BERTScore": bertscore,
-            "BLEU": bleu,
-            "METEOR": meteor,
-            "Perplexity": perplexity,
-            "Sentiment Alignment": sentiment_alignment,
-        })
+# Main function to calculate total time and cost for responses
+async def calculate_response_time_and_cost(final_sample):
+    models = [
+        "OpenAI GPT-4o",
+        "Claude 3.7 Sonnet",
+        "Gemini 2.0 Flash",
+        "LLaMA 3.3 70B",
+        "Mistral Large",
+        "DeepSeek V3",
+        "Grok 2"
+    ]
 
-# Create DataFrame
-results_df = pd.DataFrame(results)
+    # Table 1: Review, LLMs, and Responses
+    table1_data = []
 
-# Display the results as a table
-print("\nPerformance Comparison of LLMs for Response Generation:")
-print(tabulate(
-    results_df,
-    headers="keys",
-    tablefmt="grid",
-    showindex=False,
-    floatfmt=".4f"
-))
+    # Table 2: Performance analytics for each LLM
+    table2_data = {model: {
+        "ROUGE-1 F1": 0,
+        "ROUGE-2 F1": 0,
+        "ROUGE-L F1": 0,
+        "BERTScore": 0,
+        "METEOR": 0,
+        "Perplexity": 0,
+        "Compression Ratio": 0,
+        "Total Response Time (s)": 0,
+        "Total Response Cost (USD)": 0
+    } for model in models}
 
-# Calculate overall averages for each LLM (only for numeric columns except time and cost)
-numeric_columns_1 = [
-    "ROUGE-1 F1", "ROUGE-2 F1", "ROUGE-L F1", "ROUGE-L-SUM",
-    "BERTScore", "BLEU", "METEOR", "Perplexity", "Sentiment Alignment"
-]
+    # Focus on unreplied reviews
+    unreplied_reviews = final_sample[final_sample["is_replied"] == "No"]
 
-# Calculate overall sum for time and cost
-numeric_columns_2 = ["Response Time (s)", "Response Cost (USD)"]
+    # Response generation
+    response_tasks = []
+    for model_name in models:
+        for _, row in unreplied_reviews.iterrows():
+            review = row["review"]
+            user_name = row["userName"]
+            response_tasks.append(generate_response_with_time_cost(review, user_name, model_name))
 
-# Calculate average of other metrics per LLM
-average_metrics = results_df.groupby("LLM")[numeric_columns_1].mean().reset_index()
+    # Run all response tasks concurrently
+    response_results_list = await asyncio.gather(*response_tasks)
 
-# Calculate total time and cost per LLM
-total_time_cost = results_df.groupby("LLM")[numeric_columns_2].sum().reset_index()
+    # Process response results
+    index = 0
+    for model_name in models:
+        for _, row in unreplied_reviews.iterrows():
+            review = row["review"]
+            user_name = row["userName"]
+            response, response_time, response_cost = response_results_list[index]
 
-# Merge both results on "LLM"
-overall_scores = pd.merge(average_metrics, total_time_cost, on="LLM")
+            # Calculate metrics
+            reference = select_best_reference(response, reference_responses.get(user_name, ["No reference available"]))
+            rouge_scores = compute_rouge(reference, response)
+            bertscore = compute_bertscore(reference, response)
+            meteor = compute_meteor(reference, response)
+            perplexity = calculate_perplexity(response)
+            compression_ratio = compute_compression_ratio(review, response)
 
-# Print overall performance comparison
-print("\nOverall Performance Comparison of LLMs:")
-print(tabulate(
-    overall_scores,
-    headers="keys",
-    tablefmt="grid",
-    showindex=False,
-    floatfmt=".4f"
-))
+            # Update Table 2 data
+            table2_data[model_name]["ROUGE-1 F1"] += rouge_scores["rouge-1"]
+            table2_data[model_name]["ROUGE-2 F1"] += rouge_scores["rouge-2"]
+            table2_data[model_name]["ROUGE-L F1"] += rouge_scores["rouge-l"]
+            table2_data[model_name]["BERTScore"] += bertscore
+            table2_data[model_name]["METEOR"] += meteor
+            table2_data[model_name]["Perplexity"] += perplexity
+            table2_data[model_name]["Compression Ratio"] += compression_ratio
+            table2_data[model_name]["Total Response Time (s)"] += response_time
+            table2_data[model_name]["Total Response Cost (USD)"] += response_cost
+
+            # Add to Table 1
+            if not any(row["Review"] == review for row in table1_data):
+                table1_data.append({
+                    "Review": review,
+                    "OpenAI GPT-4o": "",
+                    "Claude 3.7 Sonnet": "",
+                    "Gemini 2.0 Flash": "",
+                    "LLaMA 3.3 70B": "",
+                    "Mistral Large": "",
+                    "DeepSeek V3": "",
+                    "Grok 2": ""
+                })
+            # Find the row for this review and update the corresponding model's response
+            for row in table1_data:
+                if row["Review"] == review:
+                    row[model_name] = response
+                    break
+            index += 1
+
+    # Print Table 1 in the desired format
+    print("\nTable 1: Review and Responses by LLM")
+    table1_df = pd.DataFrame(table1_data)
+    table1_df = wrap_text(table1_df, "Review", width=40)  # Wrap review text
+    table1_df = wrap_text(table1_df, "OpenAI GPT-4o", width=40)  # Wrap response text
+    table1_df = wrap_text(table1_df, "Claude 3.7 Sonnet", width=40)  # Wrap response text
+    table1_df = wrap_text(table1_df, "Gemini 2.0 Flash", width=40)  # Wrap response text
+    table1_df = wrap_text(table1_df, "LLaMA 3.3 70B", width=40)  # Wrap response text
+    table1_df = wrap_text(table1_df, "Mistral Large", width=40)  # Wrap response text
+    table1_df = wrap_text(table1_df, "DeepSeek V3", width=40)  # Wrap response text
+    table1_df = wrap_text(table1_df, "Grok 2", width=40)  # Wrap response text
+    print(tabulate(table1_df, headers="keys", tablefmt="grid", showindex=False, stralign="left"))
+
+    # Print Table 2
+    print("\nTable 2: Performance Analytics by LLM")
+    table2_df = pd.DataFrame(table2_data).T.reset_index().rename(columns={"index": "LLM"})
+    print(tabulate(table2_df, headers="keys", tablefmt="grid", showindex=False, floatfmt=".4f", stralign="left"))
+
+# Run the main function
+asyncio.run(calculate_response_time_and_cost(final_sample))
