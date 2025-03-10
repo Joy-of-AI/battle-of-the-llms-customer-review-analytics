@@ -59,7 +59,7 @@ API_KEYS = {
 if not all(API_KEYS.values()):
     raise ValueError("One or more API keys are missing. Set them in the .env file.")
 
-# Initialise API clients
+# Initialize API clients
 openai_client = OpenAI(api_key=API_KEYS["OPENAI_API_KEY"])
 anthropic_client = anthropic.Anthropic(api_key=API_KEYS["ANTHROPIC_API_KEY"])
 genai.configure(api_key=API_KEYS["GOOGLE_API_KEY"])
@@ -71,12 +71,12 @@ grok_client = OpenAI(api_key=API_KEYS["XAI_API_KEY"], base_url="https://api.x.ai
 # Global rate limiter for Mistral Large
 mistral_rate_limiter = AsyncLimiter(max_rate=1, time_period=2)
 
-# Tokeniser for OpenAI models
-openai_tokeniser = tiktoken.encoding_for_model("gpt-4")
+# Tokenizer for OpenAI models
+openai_tokenizer = tiktoken.encoding_for_model("gpt-4")
 
 # Function to count tokens for OpenAI models
 def count_tokens(text):
-    return len(openai_tokeniser.encode(text))
+    return len(openai_tokenizer.encode(text))
 
 # Function to calculate cost based on input and output tokens
 def calculate_cost(model_name, input_tokens, output_tokens):
@@ -118,16 +118,16 @@ def wrap_text(df, column_name, width=50):
     return df
     
 # Sentiment analysis function
-async def analyse_sentiment_with_time_cost(text, model_name, max_tokens=10, temperature=0):
+async def analyze_sentiment_with_time_cost(text, model_name, max_tokens=10, temperature=0):
     try:
         prompt = f"""
-        Analyse the sentiment of the following text and return only 'positive', 'negative', or 'neutral'. 
+        Analyze the sentiment of the following text and return only 'positive', 'negative', or 'neutral'. 
         Focus on the tone and key phrases in the text. Here are some examples:
         1. "I love this product! It works perfectly." → Positive
         2. "The service was terrible and the staff was rude." → Negative
         3. "The product arrived on time." → Neutral
 
-        Now analyse this text: {text}
+        Now analyze this text: {text}
         """
         input_tokens = count_tokens(prompt)
 
@@ -142,7 +142,7 @@ async def analyse_sentiment_with_time_cost(text, model_name, max_tokens=10, temp
                 )
                 end_time = time.time()
                 output = response.choices[0].message.content.strip().lower()
-                output_tokens = len(openai_tokeniser.encode(output))
+                output_tokens = len(openai_tokenizer.encode(output))
                 api_response_time = end_time - start_time
         else:
             start_time = time.time()
@@ -163,12 +163,12 @@ async def analyse_sentiment_with_time_cost(text, model_name, max_tokens=10, temp
                     temperature=temperature
                 )
                 output = response.content[0].text.strip().lower()
-                output_tokens = len(openai_tokeniser.encode(response.content[0].text))
+                output_tokens = len(openai_tokenizer.encode(response.content[0].text))
             elif model_name == "Gemini 2.0 Flash":
                 model = genai.GenerativeModel("gemini-2.0-flash")
                 response = model.generate_content(prompt, generation_config={"max_output_tokens": max_tokens, "temperature": temperature})
                 output = response.text.strip().lower()
-                output_tokens = len(openai_tokeniser.encode(output))
+                output_tokens = len(openai_tokenizer.encode(output))
             elif model_name == "DeepSeek V3":
                 response = deepseek_client.chat.completions.create(
                     model="deepseek-chat",
@@ -188,7 +188,7 @@ async def analyse_sentiment_with_time_cost(text, model_name, max_tokens=10, temp
                 }
                 response = llama.run(api_request_json)
                 output = response.json()["choices"][0]["message"]["content"].strip().lower()
-                output_tokens = len(openai_tokeniser.encode(output))
+                output_tokens = len(openai_tokenizer.encode(output))
             elif model_name == "Grok 2":
                 response = grok_client.chat.completions.create(
                     model="grok-2-latest",
@@ -290,24 +290,24 @@ async def main():
     ]
     edge_case_true_sentiment = ["neutral", "negative", "neutral", "positive", "neutral", "neutral"]
 
-    # Models to analyse
+    # Models to analyze
     models = {
-        "OpenAI GPT-4o": analyse_sentiment_with_time_cost,
-        "Claude 3.7 Sonnet": analyse_sentiment_with_time_cost,
-        "Gemini 2.0 Flash": analyse_sentiment_with_time_cost,
-        "LLaMA 3.3 70B": analyse_sentiment_with_time_cost,
-        "Mistral Large": analyse_sentiment_with_time_cost,
-        "DeepSeek V3": analyse_sentiment_with_time_cost,
-        "Grok 2": analyse_sentiment_with_time_cost
+        "OpenAI GPT-4o": analyze_sentiment_with_time_cost,
+        "Claude 3.7 Sonnet": analyze_sentiment_with_time_cost,
+        "Gemini 2.0 Flash": analyze_sentiment_with_time_cost,
+        "LLaMA 3.3 70B": analyze_sentiment_with_time_cost,
+        "Mistral Large": analyze_sentiment_with_time_cost,
+        "DeepSeek V3": analyze_sentiment_with_time_cost,
+        "Grok 2": analyze_sentiment_with_time_cost
     }
 
-    # Analyse original reviews
+    # Analyze original reviews
     await generate_tables("Customer Reviews", original_reviews, true_sentiments, models)
 
-    # Analyse edge cases
+    # Analyze edge cases
     await generate_tables("Edge Cases", edge_cases, edge_case_true_sentiment, models)
 
-    # Add noise to original reviews and analyse
+    # Add noise to original reviews and analyze
     noisy_reviews = [add_noise(review, noise_level=0.1) for review in original_reviews]
     await generate_tables("Customer Reviews with Noisy", noisy_reviews, true_sentiments, models)
    
