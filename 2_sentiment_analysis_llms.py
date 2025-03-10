@@ -1,8 +1,7 @@
 """
 Sentiment Analysis with Multiple LLMs
 
-This script performs sentiment analysis using various Large Language Models (LLMs) 
-and compares their performance across different datasets.
+This script performs sentiment analysis using various LLMs and compares their performance across customer review, edge case, and nosiy datasets.
 
 Features:
 - Supports multiple LLMs for sentiment classification.
