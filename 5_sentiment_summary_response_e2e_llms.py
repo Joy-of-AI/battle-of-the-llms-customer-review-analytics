@@ -31,6 +31,7 @@ import google.generativeai as genai
 import asyncio
 import textwrap
 import logging
+from aiolimiter import AsyncLimiter
 
 # Load environment variables
 load_dotenv()
@@ -52,6 +53,13 @@ mistral_client = Mistral(api_key=MISTRAL_API_KEY)
 deepseek_client = OpenAI(api_key=DEEPSEEK_API_KEY, base_url="https://api.deepseek.com/v1")
 llama = LlamaAPI(LLAMA_API_KEY)
 grok_client = OpenAI(api_key=XAI_API_KEY, base_url="https://api.x.ai/v1")
+
+# Global rate limiter for Mistral Large (1 request every 2 seconds)
+# Based on Mistral AI documentation, rate limiter should be  1 rps, however still Mistral did not provide all responses to queries.
+# As a result, I increased the rate to 1 request per 2 sec.
+# It significantly increased the response time of Mistral Large, however all queries got a proper response from this LLM.
+mistral_rate_limiter = AsyncLimiter(max_rate=1, time_period=2)
+# I changed rate limiter to 1 rps and then 1 request every 1.5 sec, but still Mistral Large didn't respond all time. 1 req / 2 sec worked.
 
 # Pricing per 1M tokens (USD)
 PRICING = {
@@ -87,261 +95,281 @@ def validate_sentiment(output):
             return sentiment
     return "Error Validation"
 
-# Function to analyze sentiment with time and cost
 async def analyze_sentiment_with_time_cost(text, model_name, max_tokens=10, temperature=0):
-    start_time = time.time()
     try:
         prompt = f"""
-        Analyse the sentiment of the following text and return only 'positive', 'negative', or 'neutral'. 
+        Analyze the sentiment of the following text and return only 'positive', 'negative', or 'neutral'. 
         Focus on the tone and key phrases in the text. Here are some examples:
         1. "I love this product! It works perfectly." → Positive
         2. "The service was terrible and the staff was rude." → Negative
         3. "The product arrived on time." → Neutral
 
-        Now analyse this text: {text}
+        Now analyze this text: {text}
         """
         input_tokens = count_tokens(prompt)
 
-        if model_name == "OpenAI GPT-4o":
-            response = openai_client.chat.completions.create(
-                model="gpt-4o",
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=max_tokens,
-                temperature=temperature
-            )
-            output = response.choices[0].message.content.strip().lower()
-            output_tokens = response.usage.completion_tokens
-
-        elif model_name == "Claude 3.7 Sonnet":
-            response = anthropic_client.messages.create(
-                model="claude-3-7-sonnet-latest",
-                max_tokens=max_tokens,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=temperature
-            )
-            output = response.content[0].text.strip().lower()
-            output_tokens = len(openai_tokenizer.encode(response.content[0].text))
-
-        elif model_name == "Gemini 2.0 Flash":
-            model = genai.GenerativeModel("gemini-2.0-flash")
-            response = model.generate_content(prompt, generation_config={"max_output_tokens": max_tokens, "temperature": temperature})
-            output = response.text.strip().lower()
-            output_tokens = len(openai_tokenizer.encode(output))
-
-        elif model_name == "DeepSeek V3":
-            response = deepseek_client.chat.completions.create(
-                model="deepseek-chat",
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=max_tokens,
-                temperature=temperature
-            )
-            output = response.choices[0].message.content.strip().lower()
-            output_tokens = response.usage.completion_tokens
-
-        elif model_name == "LLaMA 3.3 70B":
-            api_request_json = {
-                "model": "llama3.3-70b",
-                "messages": [{"role": "user", "content": prompt}],
-                "max_tokens": max_tokens,
-                "temperature": temperature,
-                "stream": False
-            }
-            response = llama.run(api_request_json)
-            output = response.json()["choices"][0]["message"]["content"].strip().lower()
-            output_tokens = len(openai_tokenizer.encode(output))
-
-        elif model_name == "Mistral Large":
-            chat_response = mistral_client.chat.complete(
-                model="mistral-large-latest",
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=max_tokens,
-                temperature=temperature
-            )
-            output = chat_response.choices[0].message.content.strip().lower()
-            output_tokens = len(openai_tokenizer.encode(output))
-
-        elif model_name == "Grok 2":
-            response = grok_client.chat.completions.create(
-                model="grok-2-latest",
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=max_tokens,
-                temperature=temperature
-            )
-            output = response.choices[0].message.content.strip().lower()
-            output_tokens = response.usage.completion_tokens
-
+        if model_name == "Mistral Large":
+            # Apply rate limiter before starting the timer
+            async with mistral_rate_limiter:
+                start_time = time.time()  # Start timing after rate limiter
+                response = mistral_client.chat.complete(
+                    model="mistral-large-latest",
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=max_tokens,
+                    temperature=temperature
+                )
+                end_time = time.time()  # End timing for the API call
+                output = response.choices[0].message.content.strip().lower()
+                output_tokens = len(openai_tokenizer.encode(output))
+                api_response_time = end_time - start_time  # Calculate API response time
         else:
-            return "Unsupported model", 0, 0
+            # Handle other models (no rate limiter)
+            start_time = time.time()  # Start timing for the API call
+            if model_name == "OpenAI GPT-4o":
+                response = openai_client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=max_tokens,
+                    temperature=temperature
+                )
+                output = response.choices[0].message.content.strip().lower()
+                output_tokens = response.usage.completion_tokens
+            elif model_name == "Claude 3.7 Sonnet":
+                response = anthropic_client.messages.create(
+                    model="claude-3-7-sonnet-latest",
+                    max_tokens=max_tokens,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=temperature
+                )
+                output = response.content[0].text.strip().lower()
+                output_tokens = len(openai_tokenizer.encode(response.content[0].text))
+            elif model_name == "Gemini 2.0 Flash":
+                model = genai.GenerativeModel("gemini-2.0-flash")
+                response = model.generate_content(prompt, generation_config={"max_output_tokens": max_tokens, "temperature": temperature})
+                output = response.text.strip().lower()
+                output_tokens = len(openai_tokenizer.encode(output))
+            elif model_name == "DeepSeek V3":
+                response = deepseek_client.chat.completions.create(
+                    model="deepseek-chat",
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=max_tokens,
+                    temperature=temperature
+                )
+                output = response.choices[0].message.content.strip().lower()
+                output_tokens = response.usage.completion_tokens
+            elif model_name == "LLaMA 3.3 70B":
+                api_request_json = {
+                    "model": "llama3.3-70b",
+                    "messages": [{"role": "user", "content": prompt}],
+                    "max_tokens": max_tokens,
+                    "temperature": temperature,
+                    "stream": False
+                }
+                response = llama.run(api_request_json)
+                output = response.json()["choices"][0]["message"]["content"].strip().lower()
+                output_tokens = len(openai_tokenizer.encode(output))
+            elif model_name == "Grok 2":
+                response = grok_client.chat.completions.create(
+                    model="grok-2-latest",
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=max_tokens,
+                    temperature=temperature
+                )
+                output = response.choices[0].message.content.strip().lower()
+                output_tokens = response.usage.completion_tokens
+            else:
+                return "Unsupported model", 0, 0
+
+            end_time = time.time()  # End timing for the API call
+            api_response_time = end_time - start_time  # Calculate API response time
 
         output = validate_sentiment(output)
 
     except Exception as e:
         return str(e), 0, 0
 
-    end_time = round(time.time() - start_time, 4)
     cost = calculate_cost(model_name, input_tokens, output_tokens)
 
-    return output, end_time, cost
+    # Use API response time for performance metrics (excludes rate limiter delay)
+    return output, api_response_time, cost
 
 # Function to generate summary with time and cost
 async def generate_summary_with_time_cost(text, model_name, max_tokens=50, temperature=0):
-    start_time = time.time()
     try:
         prompt = f"Provide a concise summary of the following review in one sentence, short, to the point, including key points: {text}"
         input_tokens = count_tokens(prompt)
 
-        if model_name == "OpenAI GPT-4o":
-            response = openai_client.chat.completions.create(
-                model="gpt-4o",
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=max_tokens,
-                temperature=temperature
-            )
-            output = response.choices[0].message.content.strip().lower()
-            output_tokens = response.usage.completion_tokens
-
-        elif model_name == "Claude 3.7 Sonnet":
-            response = anthropic_client.messages.create(
-                model="claude-3-7-sonnet-latest",
-                max_tokens=max_tokens,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=temperature
-            )
-            output = response.content[0].text.strip().lower()
-            output_tokens = len(openai_tokenizer.encode(response.content[0].text))
-
-        elif model_name == "Gemini 2.0 Flash":
-            model = genai.GenerativeModel("gemini-2.0-flash")
-            response = model.generate_content(prompt, generation_config={"max_output_tokens": max_tokens, "temperature": temperature})
-            output = response.text.strip().lower()
-            output_tokens = len(openai_tokenizer.encode(output))
-
-        elif model_name == "DeepSeek V3":
-            response = deepseek_client.chat.completions.create(
-                model="deepseek-chat",
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=max_tokens,
-                temperature=temperature
-            )
-            output = response.choices[0].message.content.strip().lower()
-            output_tokens = response.usage.completion_tokens
-
-        elif model_name == "LLaMA 3.3 70B":
-            api_request_json = {"model": "llama3.3-70b", "messages": [{"role": "user", "content": prompt}], "max_tokens": max_tokens, "temperature": temperature, "stream": False}
-            response = llama.run(api_request_json)
-            output = response.json()["choices"][0]["message"]["content"].strip().lower()
-            output_tokens = len(openai_tokenizer.encode(output))
-
-        elif model_name == "Mistral Large":
-            chat_response = mistral_client.chat.complete(
-                model="mistral-large-latest",
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=max_tokens,
-                temperature=temperature
-            )
-            output = chat_response.choices[0].message.content.strip().lower()
-            output_tokens = len(openai_tokenizer.encode(output))
-
-        elif model_name == "Grok 2":
-            response = grok_client.chat.completions.create(
-                model="grok-2-latest",
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=max_tokens,
-                temperature=temperature
-            )
-            output = response.choices[0].message.content.strip().lower()
-            output_tokens = response.usage.completion_tokens
-
+        if model_name == "Mistral Large":
+            # Apply rate limiter before starting the timer
+            async with mistral_rate_limiter:
+                api_start_time = time.time()  # Start timing after rate limiter
+                response = mistral_client.chat.complete(
+                    model="mistral-large-latest",
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=max_tokens,
+                    temperature=temperature
+                )
+                api_end_time = time.time()  # End timing for the API call
+                output = response.choices[0].message.content.strip().lower()
+                output_tokens = len(openai_tokenizer.encode(output))
+                api_response_time = api_end_time - api_start_time  # Calculate API response time
         else:
-            return "Unsupported model", 0, 0
+            # Handle other models (no rate limiter)
+            api_start_time = time.time()  # Start timing for the API call
+            if model_name == "OpenAI GPT-4o":
+                response = openai_client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=max_tokens,
+                    temperature=temperature
+                )
+                output = response.choices[0].message.content.strip().lower()
+                output_tokens = response.usage.completion_tokens
+            elif model_name == "Claude 3.7 Sonnet":
+                response = anthropic_client.messages.create(
+                    model="claude-3-7-sonnet-latest",
+                    max_tokens=max_tokens,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=temperature
+                )
+                output = response.content[0].text.strip().lower()
+                output_tokens = len(openai_tokenizer.encode(response.content[0].text))
+            elif model_name == "Gemini 2.0 Flash":
+                model = genai.GenerativeModel("gemini-2.0-flash")
+                response = model.generate_content(prompt, generation_config={"max_output_tokens": max_tokens, "temperature": temperature})
+                output = response.text.strip().lower()
+                output_tokens = len(openai_tokenizer.encode(output))
+            elif model_name == "DeepSeek V3":
+                response = deepseek_client.chat.completions.create(
+                    model="deepseek-chat",
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=max_tokens,
+                    temperature=temperature
+                )
+                output = response.choices[0].message.content.strip().lower()
+                output_tokens = response.usage.completion_tokens
+            elif model_name == "LLaMA 3.3 70B":
+                api_request_json = {
+                    "model": "llama3.3-70b",
+                    "messages": [{"role": "user", "content": prompt}],
+                    "max_tokens": max_tokens,
+                    "temperature": temperature,
+                    "stream": False
+                }
+                response = llama.run(api_request_json)
+                output = response.json()["choices"][0]["message"]["content"].strip().lower()
+                output_tokens = len(openai_tokenizer.encode(output))
+            elif model_name == "Grok 2":
+                response = grok_client.chat.completions.create(
+                    model="grok-2-latest",
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=max_tokens,
+                    temperature=temperature
+                )
+                output = response.choices[0].message.content.strip().lower()
+                output_tokens = response.usage.completion_tokens
+            else:
+                return "Unsupported model", 0, 0
+
+            api_end_time = time.time()  # End timing for the API call
+            api_response_time = api_end_time - api_start_time  # Calculate API response time
 
     except Exception as e:
         return str(e), 0, 0
 
-    end_time = round(time.time() - start_time, 4)
     cost = calculate_cost(model_name, input_tokens, output_tokens)
 
-    return output, end_time, cost
+    # Use API response time for performance metrics (excludes rate limiter delay)
+    return output, api_response_time, cost
 
 # Function to generate response with time and cost
 async def generate_response_with_time_cost(review, user_name, model_name, temperature=0, max_tokens=150):
-    start_time = time.time()
     try:
         prompt = f"You are a customer support agent. Write a short, empathetic, and informative response to the following customer review. The review mentions specific issues that the customer is experiencing. Address the customer's concerns in a clear, friendly, and professional manner, and provide suggestions or solutions where necessary. Address the customer by their name ({user_name}):\n\n{review}"
         input_tokens = count_tokens(prompt)
 
-        if model_name == "OpenAI GPT-4o":
-            response = openai_client.chat.completions.create(
-                model="gpt-4o",
-                messages=[{"role": "system", "content": prompt}],
-                max_tokens=max_tokens,
-                temperature=temperature
-            )
-            output = response.choices[0].message.content.strip()
-            output_tokens = response.usage.completion_tokens
-
-        elif model_name == "Claude 3.7 Sonnet":
-            response = anthropic_client.messages.create(
-                model="claude-3-7-sonnet-latest",
-                max_tokens=max_tokens,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=temperature
-            )
-            output = response.content[0].text.strip()
-            output_tokens = len(openai_tokenizer.encode(response.content[0].text))
-
-        elif model_name == "Gemini 2.0 Flash":
-            model = genai.GenerativeModel("gemini-2.0-flash")
-            response = model.generate_content(prompt, generation_config={"max_output_tokens": max_tokens, "temperature": temperature})
-            output = response.text.strip().lower()
-            output_tokens = len(openai_tokenizer.encode(output))
-
-        elif model_name == "DeepSeek V3":
-            response = deepseek_client.chat.completions.create(
-                model="deepseek-chat",
-                messages=[{"role": "system", "content": prompt}, {"role": "user", "content": review}],
-                max_tokens=max_tokens,
-                temperature=temperature
-            )
-            output = response.choices[0].message.content.strip()
-            output_tokens = response.usage.completion_tokens
-
-        elif model_name == "LLaMA 3.3 70B":
-            api_request_json = {"model": "llama3.3-70b", "messages": [{"role": "user", "content": prompt}], "temperature": temperature, "max_tokens": max_tokens, "stream": False}
-            response = llama.run(api_request_json)
-            output = response.json()["choices"][0]["message"]["content"].strip()
-            output_tokens = len(openai_tokenizer.encode(output))
-
-        elif model_name == "Mistral Large":
-            chat_response = mistral_client.chat.complete(
-                model="mistral-large-latest",
-                messages=[{"role": "system", "content": prompt}, {"role": "user", "content": review}],
-                max_tokens=max_tokens,
-                temperature=temperature
-            )
-            output = chat_response.choices[0].message.content.strip()
-            output_tokens = len(openai_tokenizer.encode(output))
-
-        elif model_name == "Grok 2":
-            response = grok_client.chat.completions.create(
-                model="grok-2-latest",
-                messages=[{"role": "system", "content": prompt}, {"role": "user", "content": review}],
-                max_tokens=max_tokens,
-                temperature=temperature
-            )
-            output = response.choices[0].message.content.strip()
-            output_tokens = response.usage.completion_tokens
-
+        if model_name == "Mistral Large":
+            # Apply rate limiter before starting the timer
+            async with mistral_rate_limiter:
+                api_start_time = time.time()  # Start timing after rate limiter
+                response = mistral_client.chat.complete(
+                    model="mistral-large-latest",
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=max_tokens,
+                    temperature=temperature
+                )
+                api_end_time = time.time()  # End timing for the API call
+                output = response.choices[0].message.content.strip()
+                output_tokens = len(openai_tokenizer.encode(output))
+                api_response_time = api_end_time - api_start_time  # Calculate API response time
         else:
-            return "Unsupported model", 0, 0
+            # Handle other models (no rate limiter)
+            api_start_time = time.time()  # Start timing for the API call
+            if model_name == "OpenAI GPT-4o":
+                response = openai_client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=[{"role": "system", "content": prompt}],
+                    max_tokens=max_tokens,
+                    temperature=temperature
+                )
+                output = response.choices[0].message.content.strip()
+                output_tokens = response.usage.completion_tokens
+            elif model_name == "Claude 3.7 Sonnet":
+                response = anthropic_client.messages.create(
+                    model="claude-3-7-sonnet-latest",
+                    max_tokens=max_tokens,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=temperature
+                )
+                output = response.content[0].text.strip()
+                output_tokens = len(openai_tokenizer.encode(response.content[0].text))
+            elif model_name == "Gemini 2.0 Flash":
+                model = genai.GenerativeModel("gemini-2.0-flash")
+                response = model.generate_content(prompt, generation_config={"max_output_tokens": max_tokens, "temperature": temperature})
+                output = response.text.strip().lower()
+                output_tokens = len(openai_tokenizer.encode(output))
+            elif model_name == "DeepSeek V3":
+                response = deepseek_client.chat.completions.create(
+                    model="deepseek-chat",
+                    messages=[{"role": "system", "content": prompt}, {"role": "user", "content": review}],
+                    max_tokens=max_tokens,
+                    temperature=temperature
+                )
+                output = response.choices[0].message.content.strip()
+                output_tokens = response.usage.completion_tokens
+            elif model_name == "LLaMA 3.3 70B":
+                api_request_json = {
+                    "model": "llama3.3-70b",
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": temperature,
+                    "max_tokens": max_tokens,
+                    "stream": False
+                }
+                response = llama.run(api_request_json)
+                output = response.json()["choices"][0]["message"]["content"].strip()
+                output_tokens = len(openai_tokenizer.encode(output))
+            elif model_name == "Grok 2":
+                response = grok_client.chat.completions.create(
+                    model="grok-2-latest",
+                    messages=[{"role": "system", "content": prompt}, {"role": "user", "content": review}],
+                    max_tokens=max_tokens,
+                    temperature=temperature
+                )
+                output = response.choices[0].message.content.strip()
+                output_tokens = response.usage.completion_tokens
+            else:
+                return "Unsupported model", 0, 0
+
+            api_end_time = time.time()  # End timing for the API call
+            api_response_time = api_end_time - api_start_time  # Calculate API response time
 
     except Exception as e:
         return str(e), 0, 0
 
-    end_time = round(time.time() - start_time, 4)
     cost = calculate_cost(model_name, input_tokens, output_tokens)
 
-    return output, end_time, cost
+    # Use API response time for performance metrics (excludes rate limiter delay)
+    return output, api_response_time, cost
 
 # Function to wrap text in a specific column
 def wrap_text(df, column_name, width=50):
@@ -400,7 +428,7 @@ async def calculate_total_time_and_cost(final_sample, unreplied_reviews):
             sentiment_results[text][model_name] = sentiment
             index += 1
 
-    # Summarisation
+    # Summarization
     summary_tasks = []
     for model_name in models.keys():
         for text in final_sample["review"]:
@@ -500,9 +528,4 @@ async def calculate_total_time_and_cost(final_sample, unreplied_reviews):
 unreplied_reviews = final_sample[final_sample["is_replied"] == "No"]
 
 # Run the main function
-asyncio.run(calculate_total_time_and_cost(final_sample, unreplied_reviews))
-
-
-# Run the main function
-# To run the tasks concurrently, improving performance
 asyncio.run(calculate_total_time_and_cost(final_sample, unreplied_reviews))
