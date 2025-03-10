@@ -56,8 +56,7 @@ grok_client = OpenAI(api_key=XAI_API_KEY, base_url="https://api.x.ai/v1")
 
 # Global rate limiter for Mistral Large (1 request every 2 seconds)
 # Based on Mistral AI documentation, rate limiter should be  1 rps, however still Mistral did not provide all responses to queries.
-# As a result, I increased the rate to 1 request per 2 sec.
-# It significantly increased the response time of Mistral Large, however all queries got a proper response from this LLM.
+# As a result, I increased the rate to 1 request per 2 sec. I amended the code to make sure this rate kimiter does not impact performance of Mistral, event its response time.
 mistral_rate_limiter = AsyncLimiter(max_rate=1, time_period=2)
 # I changed rate limiter to 1 rps and then 1 request every 1.5 sec, but still Mistral Large didn't respond all time. 1 req / 2 sec worked.
 
