@@ -1,6 +1,6 @@
 # Battle of the LLMs: Advanced Customer Review Analytics
 
-# Full article available at https://www.linkedin.com/pulse/battle-llms-practical-comparison-leading-models-amir-amin-ph-d--4kpec/?trackingId=TFxnJ4liTuWVSfhMqK7oKg%3D%3D
+[![Full Article on LinkedIn](https://img.shields.io/badge/Read_Full_Article_on_LinkedIn-0A66C2?style=for-the-badge&logo=linkedin&logoColor=white)](https://www.linkedin.com/pulse/battle-llms-practical-comparison-leading-models-amir-amin-ph-d--4kpec/?trackingId=TFxnJ4liTuWVSfhMqK7oKg%3D%3D)
 
 ![Logo](https://github.com/user-attachments/assets/85b62b4d-55a7-44fc-9e38-21bc3047caa5)
 
