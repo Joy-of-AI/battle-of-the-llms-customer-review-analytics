@@ -1,4 +1,6 @@
 # Battle of the LLMs: Advanced Customer Review Analytics
+![Logo](https://github.com/user-attachments/assets/85b62b4d-55a7-44fc-9e38-21bc3047caa5)
+
 
 A comprehensive comparison of leading Large Language Models (LLMs) for customer review analytics. It automates sentiment analysis, summarisation, and response generation for customer reviews while tracking performance metrics such as time and cost. Supported LLMs include OpenAI GPT-4o, Claude 3.7 Sonnet, Gemini 2.0 Flash, DeepSeek V3, LLaMA 3.3 70B, Mistral Large, and Grok 2.
 
@@ -55,6 +57,8 @@ A comprehensive comparison of leading Large Language Models (LLMs) for customer 
 - LLaMA 3.3 70B
 - Mistral Large
 - Grok 2
+  ![Models](https://github.com/user-attachments/assets/1c8bf838-e902-42f0-87ff-5b311308acec)
+
 
 
 ## Technologies Used
@@ -73,6 +77,8 @@ A comprehensive comparison of leading Large Language Models (LLMs) for customer 
 ## Why This Project?
 
 This project is designed for developers, data scientists, and businesses looking to leverage the power of LLMs for customer review analytics. By comparing multiple LLMs, it helps users make informed decisions about which model best suits their needs in terms of accuracy, speed, and cost.
+![Overview](https://github.com/user-attachments/assets/b601f0cc-1360-4d82-a2ef-a2910ee78e9f)
+
 
 
 ## How to Use
